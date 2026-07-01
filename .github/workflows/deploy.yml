@@ -48,10 +48,10 @@ jobs:
         run: |
           SPACE_AUTHOR="ZTTYBB"
           SPACE_NAME="OmniRoute"
-          SPACE_REPO="https://user:$HF_TOKEN@huggingface.co/spaces/$SPACE_AUTHOR/$SPACE_NAME"
-
           echo "=== Step 2: Clone HF Space repo ==="
-          git clone --depth 1 "$SPACE_REPO" hf-space
+          git clone --depth 1 \
+            "https://__token__:$HF_TOKEN@huggingface.co/spaces/$SPACE_AUTHOR/$SPACE_NAME" \
+            hf-space 2>&1
           cd hf-space
 
           echo "=== Step 3: Copy deployment files ==="
@@ -66,11 +66,14 @@ jobs:
           git config user.name "Deploy Bot"
           git config user.email "deploy@users.noreply.github.com"
 
+          # Use credential helper for push
+          git config credential.helper "!f() { echo username=__token__; echo password=$HF_TOKEN; }; f"
+
           git add -A
           # Only push if there are changes
           if ! git diff --cached --quiet; then
             git commit -m "Deploy OmniRoute $(date -u +'%Y-%m-%d %H:%M UTC')"
-            git push
+            git push 2>&1
             echo "✅ Deployed successfully! Space will rebuild automatically."
           else
             echo "ℹ️ No changes to deploy."
