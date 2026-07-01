@@ -1,0 +1,84 @@
+name: Deploy to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create/Update HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          SPACE_NAME="OmniRoute"
+          SPACE_AUTHOR="ZTTYBB"
+
+          echo "=== Step 1: Create Space if not exists ==="
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://huggingface.co/api/spaces/$SPACE_AUTHOR/$SPACE_NAME" \
+            -H "Authorization: Bearer $HF_TOKEN")
+
+          if [ "$HTTP_CODE" = "404" ]; then
+            echo "Space not found, creating..."
+            curl -s -X POST "https://huggingface.co/api/repos/create" \
+              -H "Authorization: Bearer $HF_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"type\": \"space\",
+                \"name\": \"$SPACE_NAME\",
+                \"namespace\": \"$SPACE_AUTHOR\",
+                \"private\": false,
+                \"sdk\": \"docker\"
+              }"
+            echo "Space created. Waiting for initialization..."
+            sleep 10
+          else
+            echo "Space already exists (HTTP $HTTP_CODE)"
+          fi
+
+      - name: Push files to HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          SPACE_AUTHOR="ZTTYBB"
+          SPACE_NAME="OmniRoute"
+          SPACE_REPO="https://user:$HF_TOKEN@huggingface.co/spaces/$SPACE_AUTHOR/$SPACE_NAME"
+
+          echo "=== Step 2: Clone HF Space repo ==="
+          git clone --depth 1 "$SPACE_REPO" hf-space
+          cd hf-space
+
+          echo "=== Step 3: Copy deployment files ==="
+          # Remove existing files (keep .git)
+          find . -not -path './.git/*' -not -name '.git' -delete
+
+          # Copy new files
+          cp ../Dockerfile .
+          cp ../README.md .
+
+          echo "=== Step 4: Commit and push ==="
+          git config user.name "Deploy Bot"
+          git config user.email "deploy@users.noreply.github.com"
+
+          git add -A
+          # Only push if there are changes
+          if ! git diff --cached --quiet; then
+            git commit -m "Deploy OmniRoute $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+            echo "✅ Deployed successfully! Space will rebuild automatically."
+          else
+            echo "ℹ️ No changes to deploy."
+          fi
+
+      - name: Deploy Summary
+        run: |
+          echo "## ✅ OmniRoute HF Space 部署完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "访问地址: https://huggingface.co/spaces/ZTTYBB/OmniRoute" >> $GITHUB_STEP_SUMMARY
+          echo "状态: ✅ Space 正在自动构建中..." >> $GITHUB_STEP_SUMMARY
